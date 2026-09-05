@@ -10,7 +10,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Product schema
+// ==================== PRODUCT SCHEMA ====================
+
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -32,83 +33,25 @@ const productSchema = new mongoose.Schema({
 
 const Product = mongoose.model("Product", productSchema);
 
-// Test route
-app.get("/", (req, res) => {
-  res.json({
-    message: "Majd Store API is running successfully!",
-  });
-});
+// ==================== DATABASE CONNECTION ====================
 
-// Get all products
-app.get("/api/products", async (req, res) => {
-  try {
-    const products = await Product.find();
-    res.json(products);
-  } catch (error) {
-    res.status(500).json({
-      message: "Error loading products",
-      error: error.message,
-    });
+let mongoConnection = null;
+
+async function connectToMongoDB() {
+  if (mongoConnection) {
+    return mongoConnection;
   }
-});
 
-// Create a new order
-app.post("/api/orders", async (req, res) => {
-  try {
-    const { items, total } = req.body;
-
-    if (!items || items.length === 0) {
-      return res.status(400).json({
-        message: "Cart is empty",
-      });
-    }
-
-    if (typeof total !== "number") {
-      return res.status(400).json({
-        message: "Invalid order total",
-      });
-    }
-
-    const order = new Order({
-      items,
-      total,
-    });
-
-    const savedOrder = await order.save();
-
-    res.status(201).json({
-      message: "Order created successfully!",
-      order: savedOrder,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Error creating order",
-      error: error.message,
-    });
+  if (!process.env.MONGO_URI) {
+    throw new Error("MONGO_URI environment variable is not configured.");
   }
-});
 
-// Get all orders
-app.get("/api/orders", async (req, res) => {
+  mongoConnection = mongoose.connect(process.env.MONGO_URI);
+
   try {
-    const orders = await Order.find().sort({ createdAt: -1 });
-
-    res.json(orders);
-  } catch (error) {
-    res.status(500).json({
-      message: "Error loading orders",
-      error: error.message,
-    });
-  }
-});
-
-// Connect to MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(async () => {
+    await mongoConnection;
     console.log("MongoDB connected successfully!");
 
-    // Add sample products if collection is empty
     const productCount = await Product.countDocuments();
 
     if (productCount === 0) {
@@ -142,10 +85,119 @@ mongoose
       console.log("Sample products added to MongoDB!");
     }
 
-    app.listen(PORT, () => {
-      console.log(`Majd Store API running on port ${PORT}`);
-    });
-  })
-  .catch((error) => {
+    return mongoConnection;
+  } catch (error) {
+    mongoConnection = null;
     console.error("MongoDB connection failed:", error.message);
+    throw error;
+  }
+}
+
+// ==================== TEST ROUTE ====================
+
+app.get("/", async (req, res) => {
+  res.json({
+    message: "Majd Store API is running successfully!",
   });
+});
+
+// ==================== GET PRODUCTS ====================
+
+app.get("/api/products", async (req, res) => {
+  try {
+    await connectToMongoDB();
+
+    const products = await Product.find();
+
+    res.status(200).json(products);
+  } catch (error) {
+    console.error("Error loading products:", error.message);
+
+    res.status(500).json({
+      message: "Error loading products",
+      error: error.message,
+    });
+  }
+});
+
+// ==================== CREATE ORDER ====================
+
+app.post("/api/orders", async (req, res) => {
+  try {
+    await connectToMongoDB();
+
+    const { items, total } = req.body;
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({
+        message: "Cart is empty",
+      });
+    }
+
+    if (typeof total !== "number") {
+      return res.status(400).json({
+        message: "Invalid order total",
+      });
+    }
+
+    const order = new Order({
+      items,
+      total,
+    });
+
+    const savedOrder = await order.save();
+
+    res.status(201).json({
+      message: "Order created successfully!",
+      order: savedOrder,
+    });
+  } catch (error) {
+    console.error("Error creating order:", error.message);
+
+    res.status(500).json({
+      message: "Error creating order",
+      error: error.message,
+    });
+  }
+});
+
+// ==================== GET ORDERS ====================
+
+app.get("/api/orders", async (req, res) => {
+  try {
+    await connectToMongoDB();
+
+    const orders = await Order.find().sort({ createdAt: -1 });
+
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error("Error loading orders:", error.message);
+
+    res.status(500).json({
+      message: "Error loading orders",
+      error: error.message,
+    });
+  }
+});
+
+// ==================== VERCEL EXPORT ====================
+
+// IMPORTANT:
+// Vercel needs the Express application exported.
+module.exports = app;
+
+// ==================== LOCAL DEVELOPMENT ====================
+
+// Only start a local server when running directly with Node.
+// Vercel will use the exported app instead.
+if (require.main === module) {
+  connectToMongoDB()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`Majd Store API running on port ${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error("Failed to start server:", error.message);
+    });
+}
