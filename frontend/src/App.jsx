@@ -8,8 +8,13 @@ function App() {
   const [orderMessage, setOrderMessage] = useState("");
 
   useEffect(() => {
-    fetch("http://localhost:5000/")
-      .then((response) => response.json())
+    fetch("/api/")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Backend connection failed");
+        }
+        return response.json();
+      })
       .then((data) => {
         setApiMessage(data.message);
       })
@@ -17,14 +22,20 @@ function App() {
         console.error("Error connecting to backend:", error);
       });
 
-    fetch("http://localhost:5000/api/products")
-      .then((response) => response.json())
+    fetch("/api/products")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load products");
+        }
+        return response.json();
+      })
       .then((data) => {
-        setProducts(data);
+        setProducts(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch((error) => {
         console.error("Error loading products:", error);
+        setProducts([]);
         setLoading(false);
       });
   }, []);
@@ -101,7 +112,7 @@ function App() {
         quantity: item.quantity,
       }));
 
-      const response = await fetch("http://localhost:5000/api/orders", {
+      const response = await fetch("/api/orders", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -167,6 +178,8 @@ function App() {
 
           {loading ? (
             <p>Loading products...</p>
+          ) : products.length === 0 ? (
+            <p>No products available.</p>
           ) : (
             <div className="product-grid">
               {products.map((product) => (
@@ -182,7 +195,9 @@ function App() {
 
                   <p>{product.description}</p>
 
-                  <strong>${product.price.toFixed(2)}</strong>
+                  <strong>
+                    ${Number(product.price).toFixed(2)}
+                  </strong>
 
                   <button onClick={() => addToCart(product)}>
                     Add to Cart
@@ -243,7 +258,12 @@ function App() {
           )}
 
           {orderMessage && (
-            <p style={{ marginTop: "20px", fontWeight: "bold" }}>
+            <p
+              style={{
+                marginTop: "20px",
+                fontWeight: "bold",
+              }}
+            >
               {orderMessage}
             </p>
           )}
